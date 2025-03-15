@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from routes.user.model import *
 from sqlalchemy.orm import Session
 from entities import *
-from response_model import ResponseModel
+from model.response_model import ResponseModel
 from typing import List, Dict
 # from app.models import Client, Pawn
 from sqlalchemy.sql import func, or_, and_
