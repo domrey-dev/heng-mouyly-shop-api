@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 # from models import Account
 from database import get_db
-from model.response_model import ResponseModel
+from response_model import ResponseModel
 from routes.oauth2.repository import get_current_user
 from routes.user.repository import Staff
 from routes.user.model import *
