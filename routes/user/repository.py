@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from routes.user.model import *
 from sqlalchemy.orm import Session
 from entities import *
-from model.response_model import ResponseModel
+from response_model import ResponseModel
 from typing import List, Dict
 # from app.models import Client, Pawn
 from sqlalchemy.sql import func, or_, and_
@@ -101,13 +101,11 @@ class Staff:
         ).first()
 
         if existing_customer:
-            # ✅ Update existing customer's name and address
             existing_customer.cus_name = order_info.cus_name
             existing_customer.address = order_info.address
             db.commit()
             db.refresh(existing_customer)
         else:
-            # ✅ Create new customer if not found
             existing_customer = self.create_client(
                 CreateClient(
                     cus_name=order_info.cus_name, 
@@ -118,7 +116,6 @@ class Staff:
                 True
             )
 
-        # ✅ Check if order_id is provided, if it exists, return an error
         if hasattr(order_info, "order_id") and order_info.order_id:
             existing_order = db.query(Order).filter(Order.order_id == order_info.order_id).first()
             if existing_order:
@@ -128,7 +125,6 @@ class Staff:
                     message="ផលិតផលបានរក្សាទុករួចរាល់ហើយ"
                 )
 
-        # ✅ Create a new order if order_id is not provided
         order = Order(
             cus_id=existing_customer.cus_id,
             order_deposit=order_info.order_deposit
@@ -148,7 +144,6 @@ class Staff:
             else:
                 prod_id = existing_product.prod_id
 
-            # ✅ Add order details (always create new details, do not delete old ones)
             order_detail = OrderDetail(
                 order_id=order.order_id,
                 prod_id=prod_id,
@@ -177,7 +172,6 @@ class Staff:
                 detail="Pawn date must be before the expire date.",
             )
 
-        # ✅ Check if the provided pawn_id already exists
         existing_pawn = db.query(Pawn).filter(Pawn.pawn_id == pawn_info.pawn_id).first()
         
         if existing_pawn:
@@ -186,7 +180,6 @@ class Staff:
                 detail=f"Pawn record with ID {pawn_info.pawn_id} already exists."
             )
 
-        # ✅ Check if customer exists by phone number or cus_id
         existing_customer = db.query(Account).filter(
             or_(
                 Account.phone_number == pawn_info.phone_number, 
@@ -196,13 +189,11 @@ class Staff:
         ).first()
 
         if existing_customer:
-            # ✅ Update existing customer's name and address
             existing_customer.cus_name = pawn_info.cus_name
             existing_customer.address = pawn_info.address
             db.commit()
             db.refresh(existing_customer)
         else:
-            # ✅ Create a new customer if not found
             existing_customer = self.create_client(
                 CreateClient(
                     cus_name=pawn_info.cus_name,
@@ -213,7 +204,6 @@ class Staff:
                 True
             )
 
-        # ✅ Create a new Pawn record
         pawn = Pawn(
             cus_id=existing_customer.cus_id,
             pawn_date=pawn_info.pawn_date,
@@ -225,7 +215,6 @@ class Staff:
         db.commit()
         db.refresh(pawn)
 
-        # ✅ Insert Pawn Products (Allow multiple products per pawn)
         for product in pawn_info.pawn_product_detail:
             # 🔹 Ensure product exists or create new one
             existing_product = db.query(Product).filter(
@@ -238,7 +227,6 @@ class Staff:
             else:
                 prod_id = existing_product.prod_id
 
-            # ✅ Create PawnDetail for each product
             pawn_detail = PawnDetail(
                 pawn_id=pawn.pawn_id,
                 prod_id=prod_id,
@@ -249,7 +237,7 @@ class Staff:
 
             db.add(pawn_detail)
 
-        db.commit()  # ✅ Commit all pawn details at once for efficiency
+        db.commit()
 
         return ResponseModel(
             code=200,
@@ -378,12 +366,25 @@ class Staff:
 
     def get_client(self, db: Session):
         clients = db.query(Account).filter(Account.role == 'user').all()
+        
+        # Serialize the client objects
+        serialized_clients = []
+        for client in clients:
+            client_dict = {
+                "cus_id": client.cus_id,
+                "cus_name": client.cus_name,
+                "phone_number": client.phone_number,
+                "address": client.address or "",  # Convert None to empty string
+                "role": client.role,
+                # Add any other fields you need
+            }
+            serialized_clients.append(client_dict)
+        
         return ResponseModel(
             code=200,
             status="Success",
-            result=clients
+            result=serialized_clients
         )
-
     def get_order_by_id(self, db: Session, order_id: Optional[int] = None):
         """
         Retrieve all orders or a specific order by ID along with customer details.
@@ -524,7 +525,7 @@ class Staff:
         if phone_number:
             filters.append(Account.phone_number == phone_number)
         if cus_name:
-            filters.append(func.lower(Account.cus_name) == func.lower(cus_name))  # Case-insensitive search
+            filters.append(func.lower(Account.cus_name) == func.lower(cus_name))
         if cus_id:
             filters.append(Account.cus_id == cus_id)
 
@@ -557,8 +558,37 @@ class Staff:
             result=get_detail_order
         )
 
+    def get_client_by_phone(self, db: Session, phone_number: str):
+        """Retrieve client by phone number and ensure they have a 'user' role."""
 
+        client = db.query(Account).filter(
+            and_(
+                Account.phone_number == phone_number,
+                Account.role == 'user'
+            )
+        ).first()
 
+        if not client:
+            raise HTTPException(
+                status_code=404,
+                detail="Client not found"
+            )
+
+        account_orders = self.get_order_account(db=db, phone_number=phone_number)
+
+        if not account_orders:
+            return ResponseModel(
+                code=200,
+                status="Success",
+                message="Orders not found",
+                result=account_orders
+            )
+
+        return ResponseModel(
+            code=200,
+            status="Success",
+            result=account_orders
+        )
 
     def get_order_account(
         self,
